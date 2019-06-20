@@ -1,0 +1,557 @@
+---
+title: "Final Project Outline - Survival Analysis and use of Weibull Distribution"
+author: "Qianhui Ma, Chris Olen, Jonathan Williams"
+date: "June 10, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Survival Analysis deals with modeling time until failure or time until a particular event occurs;
+in other words, the response variable for survival analyses is time or duration (until the event
+of interest occurs).
+
+Two primary characteristics of these types of data include:
+
+A) The times are non-negative and typically have skewed distributions with long tails.
+
+B) Some of the subjects may 'survive' beyond the period of analyses such that their 
+survival durations are actually unknown. Data in this case is said to be censored.
+
+Broadly speaking, there are three types of techniques used to model survival times:
+
+1) Parametric models, which require the specification of a probability distribution for the survival times.
+
+2) Semi-parametric models, in which dependence on the explanatory variables is modeled explicitly,
+but no specific probability distribution is assumed for the survival times.
+
+3) Non-parametric models, which are useful for descriptive purposes and to see the shape of the
+hazard and survivor functions before a parametric model with regressors is introduced.
+
+## Mathematical Framework
+
+Let the random variable $Y$ denote the survival time or duration until failure/event occurs
+and let $f(y)$ denote its probability density function...
+
+**Failure Function**: The probability of failure before a specific time $y$ is given by the cumulative probability density function:
+
+$$F(y) = Pr(Y <y) = \int_0^{y}f(t)dt$$
+
+**Survival Function:** The probability of survival BEYOND time y is given by:
+
+$$S(y) = Pr(Y\geq y)=1-F(y)$$
+
+
+**Hazard Function:** The probability of failure/death in an infinitesimally small time between $y$ and $(y + \delta y)$, given survival up to time $y$. In other words, the hazard function is a function of both the probability of failure at any particular time and survival up until that particular time.
+
+The hazard function yields what is commonly referred to as the failure or hazard rate:
+
+$$h(t) = \lim_{\delta y\to0} \frac{P(y \leq Y < y + \delta y |Y >y)}{\delta y}$$
+$$    = \lim_{\delta y\to0} \frac{F(y+ \delta y)-F(y)}{\delta y} \times \frac{1}{S(y)}$$
+
+The first component is, by definition, the probability density function:
+
+$$    = \lim_{\delta y\to0} \frac{F(y+ \delta y)-F(y)}{\delta y} = f(y)$$
+Therefore:
+
+$$h(y) = \frac{f(y)}{S(y)}$$
+It can also be written as:
+
+$$ h(y) = -\frac{d}{dy}\{log[S(y)]\} $$
+Hence, using the 'cumulative hazard function' $H(y)$, we have:
+
+$$ S(y) = exp[-H(y)] ~~~ \texttt{where} ~~~H(y) = \int_0^{y}h(t)dt, ~~~ H(y) = -log[S(y)]$$
+
+## Exponentially Distributed Response Variable
+
+The simplest model for a survival time $Y$ is the exponential distribution, which has the following probability density function:
+
+$$f(y;\theta) = \theta e^{-\theta y},~~~ ~~~y\geq0, \theta>0$$
+
+Where $\theta$ is known as the **scale** or **rate** parameter and determines the spread of the distribution.
+
+The expected value of an exponentially distributed random variable $y$ is:
+
+$$\texttt{E}(y)=\frac{1}{\theta}~~~ \texttt{and}~~~\texttt{var}(y)=\frac{1}{\theta^2}$$
+
+Recall previously that the hazard function is:
+
+$$h(y) = \frac{f(y)}{S(y)}$$
+
+Thus, the survival function for the exponential distribution is:
+
+$$S(y;\theta) = e^{-\theta y}$$
+
+...and the hazard function for the exponential distribution is:
+
+$$h(y;\theta) = \theta$$
+
+Notice that the hazard function does not depend on time $y$. This is because the exponential distribution is said to be **memoryless**: The probability of failure at any given time given survival up until that time is constant.
+
+## Proportional Hazard Models and Interpretation of Coefficients 
+
+For exponential regression, the dependence of random variable $y$ on the covariates is modeled as $G(\texttt{E}[y]) = x^{T}b$. Because we want the expected value of $y$ to be positive since time is being modeled, we will use the log link function such that$\frac{1}{\theta} = \texttt{exp}(x^{T}b)$. This is inversely proportional to the hazard function for the exponential distribution $h(y;\beta) = \theta = \frac{1}{\texttt{exp}(x^{T}b)}$.
+
+In the case of exponential regression, we model the effect of a one unit change in a given covariate on the hazard rate as such:
+
+• $\beta_1X_1 + \beta_0 - \beta_0 = \log\mu_2 - \log\mu_1 ~~~ \texttt{where}~~~ X_1 = 1 ~~~ \texttt{or}~~~ 0$
+• $\beta_1X_1 = \log\big(\frac{\mu_2}{\mu_1}\big)$
+• $\exp(\beta_1X_1) = \frac{\mu_2}{\mu_1}$
+• $\exp(\beta_1) = \frac{\mu_2}{\mu_1} ~~~;~~~ \exp(\beta_1) = \frac{\theta_1}{\theta_2}$
+
+Thus, given the inverse relationship between the expected value of time and the hazard rate, the exponentiated coefficient, if positive, yields a proportional increase in the expected value of time or duration $y$ and a proportional decrease in the hazard rate. In other words, if a coefficient is greater than zero, a unit increase in the covariate means that the likelihood of failure, given surival up to time $y$, decreases; conversely, if a coefficient is less than zero, a unit increase in the covariate means that the likelihood of failure, given survival up to time $y$, increases.
+
+## Simulation of Exponential Regression
+
+```{r library, results='hide', message=FALSE, warning=FALSE}
+#install.packages("gamlss")
+library(gamlss)
+#install.packages("survival")
+library("survival")
+library(fitdistrplus)
+set.seed(5)
+```
+
+```{r silumation_exponential}
+# Defining sample size, number of parameters, coefficients, and covariates
+N <- 10000
+k <- 2
+b <- c(0.5,0.7)
+X <- matrix(c(rep(1,N),rnorm(N,0,1)),nrow=N,ncol=k)
+head(X)
+# Generating linear predictor
+eta <- X %*% b
+# Generating scale/rate parameter lambda
+lambda <- 1/exp(eta)
+# Generating y using exponential distribution 
+y <- matrix(-99,nrow=N)
+for (i in 1:N){
+  y[i] <- rexp(1, rate=lambda[i])
+}
+
+# Putting the results into a dataframe:
+yX <- data.frame(cbind(y,X,1))
+colnames(yX) <- c("y","X1","X2","cen")
+
+#Newton-Raphson
+dta <- data.frame(ite=numeric(),b0=numeric(),b1=numeric(),err=numeric(),stringsAsFactors=FALSE)
+b0 <- matrix(c(0.4,0.8),ncol=1)
+tol <- 1e-5
+err <- 1e10
+ite <- 0
+while (err>tol){
+  var.y <- exp(X %*% b0)^2
+  mu.y <- exp(X%*%b0)
+  W <- diag(as.numeric((1/var.y)*mu.y^2),nrow=length(var.y),ncol=length(var.y))
+  z <- X%*%b0 +(y-mu.y)/mu.y
+  b1 <- solve((t(X) %*% W %*% X)) %*% (t(X) %*% W %*% z)
+  
+  err <- max(abs(b1-b0))
+  dta <- rbind(dta,data.frame(ite,b0,b1,err,stringsAsFactors=FALSE))
+  
+  b0 <- b1
+  ite <- ite + 1
+}
+dta
+
+# Fitting simulating data using GLM:
+exp.model <- glm(y ~ X2, data = yX, family = Gamma(link="log"))
+summary(exp.model)
+
+# Plotting distribution of the simulated response variable:
+plot(density(y), xlim = c(0,50), ylim = c(0,1.2), xlab = "Time of Event", main = "Density of Response Variable", col = 'blue')
+# Fitting the simulated response variable to exponential distribution, obtaining scale/rate parameter, :
+y.dist <- fitdist(yX$y, "exp")
+summary(y.dist)
+exp.rate = y.dist$estimate
+# Using obtained parameters to generate and plot probability density function against simulated response variable:
+exp.x <- rexp(N, rate = exp.rate) 
+#exp.density <- dexp(exp.x, rate = exp.rate)
+par(new=TRUE)
+plot(density(exp.x), xlim = c(0,50), ylim = c(0,1.2), xlab = "Time of Event", main = "Density of Response Variable", col = 'red')
+legend("topright", legend=c("Density of Generated Y", "Density of PDF Fit to Y"),
+       col=c("blue", "red"), lty=1:2, cex=0.8)
+```
+
+## Kaplan-Meier non-parametric survival analysis
+
+The empirical survivor function, an estimate of the probability of survival beyond time $y$, is given by:
+
+$$\tilde{S}(y) = \frac{\texttt{number of subjects with survival times} \geq y}{\texttt{total number of subjects}}$$
+The Kaplan-Meier method is a common way to calculate this function:
+
+$$\hat{S}(y) = \prod_{j=1}^{k}\bigg(\frac{n_j-d_j}{n_j}\bigg)$$
+
+where $n_j$ is the number of subjects who are alive at time $y_j$ and $d_j$ is the number of subjects who die at $y_j$.
+
+```{r Kaplan-Meier}
+kmsurvival <- survfit(Surv(yX$y)~1)
+#summary(kmsurvival)
+plot(kmsurvival, xlim = c(0,100), xlab="Time", ylab="Survival Probability")
+```
+
+## Simulation of Weibull Regression
+
+The Weibull distribution is another distribution commonly used to model survival times. It has the following probability distribution:
+$$f(y;\lambda,\theta) = \frac{\lambda y^{\lambda-1}}{\theta^{\lambda}}\exp\bigg[-\bigg(\frac{y}{\theta}\bigg)^\lambda\bigg], ~~~ ~~~ y\geq0,~~~\lambda>0,~~~\theta>0$$
+
+Where $\lambda$ determines the **shape** of the distribution and $\theta$ determines the **scale** of the distribution.
+
+The survival function is given by:
+$$S(y; \lambda, \phi) = \int_y^{\infty}\lambda \phi y^{\lambda - 1}\exp(- \phi y^\lambda)du$$
+
+$$= \exp(- \phi y^\lambda)$$
+
+And consequently, the hazard function is given by:
+$$ h(y; \lambda, \phi) = \lambda \phi y^{\lambda-1}$$
+
+Note that the hazard function depends on time $y$ and the shape parameter $\lambda$. Given a certain $\lambda$, the failure rate may be increasing or decreasing, and as such, the Weibull distribution produces an "accelerated failure time" model.
+
+The expected value of a random variable Y following a Weibull distribution is:
+$$\texttt{E}(Y) = \int_0^{\infty}\lambda \phi y^{\lambda}\exp(- \phi y^\lambda)dy$$
+$$  =  \phi^{-1/\lambda} \Gamma\bigg(1 + \frac{1}{\lambda}\bigg)$$
+We model the covariates in terms of $\phi$, which is equal to $1/ \theta^\lambda$ and $\alpha e^{x^T\beta}$. As a result, we re-write the Weibull hazard function as:
+
+$$h(y;\lambda,\phi) = \lambda\alpha y^{\lambda -1}e^{x^T\beta}$$
+
+That said, R's Weibull regression connects the covariates with the scale parameter, $\theta$, as follows:
+
+$$\theta = \exp(x^Tb)$$
+
+## Plotting Various Weibull PDFs, CDFs, Survival Functions, and Hazard Functions
+
+```{r Weibull_1}
+rm(list=ls())
+# t, q      : vector of quantiles.
+# p         : vector of probabilities.
+# n         : number of observations. 
+# lambda : scale parameter
+# kappa  : shape parameter
+# alpha  : power (shape) parameter
+
+# Cumulative distribution function
+pexpweibull <- function(t,lambda,kappa,alpha,log.p=FALSE){
+  log.cdf <- alpha*pweibull(t,scale=lambda,shape=kappa,log.p=TRUE)
+  ifelse(log.p, return(log.cdf), return(exp(log.cdf)))
+}  
+
+# Probability density function
+dexpweibull <- function(t,lambda,kappa,alpha,log=FALSE){
+  log.pdf <- log(alpha) + (alpha-1)*pweibull(t,scale=lambda,shape=kappa,log.p=TRUE) + 
+    dweibull(t,scale=lambda,shape=kappa,log=TRUE)
+  ifelse(log, return(log.pdf), return(exp(log.pdf)))
+}
+
+# Quantile function
+qexpweibull <- function(p,lambda,kappa,alpha,log.p=FALSE){
+  quant <- qweibull(p^(1/alpha),scale=lambda,shape=kappa,log.p = TRUE)
+  ifelse(log, return(quant), return(exp(quant)))
+}  
+
+# Random number generation
+rexpweibull <- function(n,lambda,kappa,alpha,log=FALSE){
+  u = runif(n)
+  sim <- qweibull(u^(1/alpha),scale=lambda,shape=kappa)
+  return(sim)
+} 
+
+# Hazard function
+hexpweibull <- function(t,lambda,kappa,alpha,log=FALSE){
+  log.pdf <-  log(alpha) + (alpha-1)*pweibull(t,scale=lambda,shape=kappa,log.p=TRUE) + 
+    dweibull(t,scale=lambda,shape=kappa,log=TRUE)
+  cdf <- exp(alpha*pweibull(t,scale=lambda,shape=kappa,log.p=TRUE) )
+  log.h <- log.pdf - log(1-cdf)
+  ifelse(log, return(log.h), return(exp(log.h)))
+}                                                                                      
+
+# Cumulative hazard function
+CHexpweibull <- function(t,lambda,kappa,alpha,log.p=FALSE){
+  cdf <- exp(alpha*pweibull(t,scale=lambda,shape=kappa,log.p=TRUE) )
+  return(-log(1-cdf))
+}
+
+# Weibull 2-Parameter PDF, CDF, Survival Function, and Hazard Function with Shape Parameter = 1
+d1 <- Vectorize(function(t) dexpweibull(t,1,1,1))
+c1 <- Vectorize(function(t) pexpweibull(t,1,1,1))
+s1 <- Vectorize(function(t) 1-pexpweibull(t,1,1,1))
+h1 <- Vectorize(function(t) hexpweibull(t,1,1,1))
+par(mfrow = c(2,2))
+curve(d1,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="f(t); p(t)", main = "PDF - 2p Weibull Shape = 1", cex.axis=1.5,cex.lab=1.5)
+curve(c1,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="F(t); P(T < t)", main = "CDF - 2p Weibull Shape = 1",cex.axis=1.5,cex.lab=1.5)
+curve(s1,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="S(t); P(T >= t)", main = "Survival - 2p Weibull Shape = 1",cex.axis=1.5,cex.lab=1.5)
+curve(h1,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="h(t); f(t)/S(t)", main = "Hazard - 2p Weibull Shape = 1",cex.axis=1.5,cex.lab=1.5)
+```
+
+**ANALYSIS:** The Weibull distribution with shape parameter $= 1$ is equivalent to the exponential distribution. The probability of a particular event or failure happening at any time $t$ decreases as time increases; the probability of failure increases at a decreasing rate as time $t$ increases; the probability of survival decreases at a decreasing rate as time $t$ increases; the hazard rate is constant over time: in other words, the probability of failure at any given time $t$ given the rate of survival up until time $t$ is constant.
+
+```{r Weibull_2}
+# Weibull 2-Parameter PDF, CDF, Survival Function, and Hazard Function with Shape Parameter = 5
+d2 <- Vectorize(function(t) dexpweibull(t,1,2,1))
+c2 <- Vectorize(function(t) pexpweibull(t,1,2,1))
+s2 <- Vectorize(function(t) 1-pexpweibull(t,1,2,1))
+h2 <- Vectorize(function(t) hexpweibull(t,1,2,1))
+par(mfrow = c(2,2))
+curve(d2,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="f(t); p(t)", main = "PDF - 2p Weibull Shape = 2", cex.axis=1.5,cex.lab=1.5)
+curve(c2,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="F(t); P(T < t)", main = "CDF - 2p Weibull Shape = 2",cex.axis=1.5,cex.lab=1.5)
+curve(s2,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="S(t); P(T >= t)", main = "Survival - 2p Weibull Shape = 2",cex.axis=1.5,cex.lab=1.5)
+curve(h2,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="h(t); f(t)/S(t)", main = "Hazard - 2p Weibull Shape = 2",cex.axis=1.5,cex.lab=1.5)
+```
+
+**ANALYSIS:** With shape parameter $> 1$, we see that the probability of an event/failure occurring at time $t$ initially starts low, spikes, and then decreases; the cumulative probability of failure initially increases slowly, spikes, and then slowly levels off; the cumulative probability of survival drops slowly at first, drops precipitously soon after, and then levels off; the hazard rate increases.
+
+```{r Weibull_3}
+# Weibull 2-Parameter PDF, CDF, Survival Function, and Hazard Function with Shape Parameter = .5
+d3 <- Vectorize(function(t) dexpweibull(t,1,0.5,1))
+c3 <- Vectorize(function(t) pexpweibull(t,1,0.5,1))
+s3 <- Vectorize(function(t) 1-pexpweibull(t,1,0.5,1))
+h3 <- Vectorize(function(t) hexpweibull(t,1,0.5,1))
+par(mfrow = c(2,2))
+curve(d3,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="f(t); p(t)", main = "PDF - 2p Weibull Shape = 0.5", cex.axis=1.5,cex.lab=1.5)
+curve(c3,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="F(t); P(T < t)", main = "CDF - 2p Weibull Shape = 0.5",cex.axis=1.5,cex.lab=1.5)
+curve(s3,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="S(t); P(T >= t)", main = "Survival - 2p Weibull Shape = 0.5",cex.axis=1.5,cex.lab=1.5)
+curve(h3,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="h(t); f(t)/S(t)", main = "Hazard - 2p Weibull Shape = 0.5",cex.axis=1.5,cex.lab=1.5)
+```
+
+**ANALYSIS:** With shape parameter $< 1$, we see that the probability of an event/failure occurring at time $t$ initially starts very high and then rapidly decreases; the probability of failure initially increases sharply and then levels off; the probability of survival initially drops rapidly and then levels off; the hazard rate starts out very high and then quickly drops.
+
+```{r Weibull_4}
+# Weibull 3-Parameter PDF, CDF, Survival Function, and Hazard Function with First Shape Parameter = 2, Second Shape Parameter 0.05
+d4 <- Vectorize(function(t) dexpweibull(t,1,2,0.3))
+c4 <- Vectorize(function(t) pexpweibull(t,1,2,0.3))
+s4 <- Vectorize(function(t) 1-pexpweibull(t,1,2,0.3))
+h4 <- Vectorize(function(t) hexpweibull(t,1,2,0.3))
+par(mfrow = c(2,2))
+curve(d4,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="f(t); p(t)", main = "PDF - 3p Weibull Shape1 = 2, Shape 2 = 0.3", cex.axis=1.5,cex.lab=1.5)
+curve(c4,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="F(t); P(T < t)", main = "CDF - 3p Weibull Shape1 = 2, Shape 2 = 0.3",cex.axis=1.5,cex.lab=1.5)
+curve(s4,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="S(t); P(T >= t)", main = "Survival - 3p Weibull Shape1 = 2, Shape 2 = 0.3",cex.axis=1.5,cex.lab=1.5)
+curve(h4,0,5,ylim=c(0,4),col="blue",lwd=2,n=100,xlab="t",ylab="h(t); f(t)/S(t)", main = "Hazard - 3p Weibull Shape1 = 2, Shape 2 = 0.3",cex.axis=1.5,cex.lab=1.5)
+```
+
+**ANALYSIS:** With shape parameter $1 > 1$ and shape parameter $2 < .5$, the probability of an event or failure occurring at a time $t$ decreases as time $t$ increases; the probability of failure increases quickly and then levels off as time $t$ increases; the probability of survival decreases very quickly and then levels off as time $t$ increases; the hazard rate initially decreases with time $t$, subsequently levels off, and then begins to increase again.
+
+## Simulation of Data Distributed Weibull (Shape Parameter = 3)
+
+```{r Weibull_Simulation}
+# Defining sample size, number of parameters, coefficients, and covariates
+set.seed(5)
+N <- 10000
+k <- 4
+b <- c(-.2,0,2,.5)
+X <- matrix(c(rep(1,N),rnorm(N,0,1),rnorm(N,0,1),rnorm(N,0,1)),nrow=N,ncol=k)
+# Generating the linear predictor:
+eta <- X %*% b
+# Fixing the shape parameter:
+shape <- 3
+# Generate scale parameter using expectation of Weibull Y per R requirements:
+scale <- exp(eta)
+# Use Weibull parameters to generate values of response variable:
+y <- matrix(-99,nrow=N)
+for (i in 1:N){
+  y[i] <- rweibull(1, shape = shape, scale = scale[i])
+}
+# Throw the results into a data frame
+yX <- data.frame(cbind(y,X,1))
+colnames(yX) <- c("y","X1","X2","X3","X4",'cen')
+weibull.model <- survreg(Surv(yX$y, yX$cen) ~ yX$X2 + yX$X3 + yX$X4, 
+                         data = yX, dist="weibull")
+summary(weibull.model)
+
+# Note that scale in the output is approximately 0.5. In R, this output is equal to 1 divided by 
+# the shape parameter used to generate the data. Given that we chose a shape parameter of 3, this result
+# matches our expectations. 
+
+
+# Plotting distribution of the simulated response variable:
+# Fitting the simulated response variable to exponential distribution, obtaining scale/rate parameter, :
+y.dist <- fitdist(yX$y, "weibull")
+summary(y.dist) 
+weibull.shape <- y.dist$estimate[1]
+weibull.scale <- y.dist$estimate[2]
+# Using obtained parameters to generate and plot probability density function against simulated response variable:
+weibull.x <- rweibull(N, shape = weibull.shape, scale = weibull.scale) 
+weibull.density <- dweibull(weibull.x, shape = weibull.shape, scale = weibull.scale)
+
+par(mfrow = c(2,2))
+plot(density(yX$y, adjust = 1), xlim = c(0,100), ylim = c(0,.8), xlab = "Time of Event", main = "Density of Generated Response Variable",
+     cex.main=.75, col = 'blue')
+plot(density(weibull.x),xlim = c(0,25), ylim = c(0,.5), xlab = "Time of Event", main = "Density of PDF Fit to Generated Response Variable",
+     cex.main=.75, col = 'red')
+
+# Kaplan-Meier non-parametric survival analysis:
+kmsurvival <- survfit(Surv(yX$y)~1)
+#summary(kmsurvival)
+plot(kmsurvival, xlim = c(0,100), xlab="Time", ylab="Survival Probability", main = "Kaplan-Meier non-parametric",
+     cex.main=.75)
+```
+
+## Sample Dataset 1: Marriage Dissolution in the U.S.
+
+The unit of observation is the couple and the event of interest is divorce, with interview and widowhood treated as censoring events. We have three fixed covariates: education of the husband and two indicators of the couple's ethnicity: whether the husband is black and whether the couple is mixed. The variables are:
+
+* id: a couple number
+* heduc: education of the husband, coded
+
+    - 0 = less than 12 years,
+    - 1 = 12 to 15 years, and
+    - 2 = 16 or more years.
+
+* heblack: coded 1 if the husband is black and 0 otherwise
+* mixed: coded 1 if the husband and wife have different ethnicity (defined as black or other), 0 otherwise.
+* years: duration of marriage, from the date of wedding to divorce or censoring (due to widowhood or interview).
+* div: the failure indicator, coded 1 for divorce and 0 for censoring.
+
+The Dataset can be found at https://data.princeton.edu/wws509/datasets/#divorce. It is used in a class called Pop 509 Survival Analysis at Princeton University. 
+
+```{r divorce_dataset_1}
+##Weibull Distribution Textbook with Divorce Dataset
+Datapath = getwd()
+Data <- read.csv(file=paste(Datapath,"Divorce123.csv", sep="/"), header = TRUE)
+
+head(Data)
+#Take a look at the response variable
+hist(Data$years)
+
+#fit y with weibull, exponential and gamma
+library(fitdistrplus)
+fit_w  <- fitdist(Data$years, "weibull")
+fit_e  <- fitdist(Data$years, "exp")
+par(mfrow=c(2,2))
+plot.legend <- c("Weibull", "exp")
+denscomp(list(fit_w, fit_e), legendtext = plot.legend)
+cdfcomp (list(fit_w, fit_e), legendtext = plot.legend)
+qqcomp  (list(fit_w, fit_e), legendtext = plot.legend)
+ppcomp  (list(fit_w, fit_e), legendtext = plot.legend)
+```
+
+```{r divorce_dataset_2}
+## Regression
+#install.packages("survival")
+
+library("survival")
+#colSums(sapply(Data, is.na))
+#Data <- Data[complete.cases(Data), ]
+exp <- survreg(Surv(Data$years,Data$div) ~ as.factor(Data$heduc) + as.factor(Data$mixed), dist="exponential")
+summary(exp)
+
+weibull <- survreg(Surv(Data$years,Data$div) ~ as.factor(Data$heduc) + as.factor(Data$mixed), dist="weibull")
+summary(weibull)
+
+
+##With zero predictor
+wei_null <- survreg(Surv(Data$years,Data$div) ~ 1, dist="weibull")
+summary(wei_null)
+
+#Cox propotional Hazard Model
+hazard <- coxph(Surv(Data$years, Data$div)~as.factor(Data$heduc)+as.factor(Data$mixed))  
+summary(hazard)
+##Kaplan-Meier non-parametric analysis
+
+library('cmprsk')
+library('survminer')
+
+fit <- survfit(Surv(Data$years,Data$div) ~ as.factor(Data$heduc))
+#print(fit)
+ggsurvplot(fit, data = Data,
+           pval = TRUE, conf.int = TRUE,
+           linetype = "strata",
+           surv.median.line = "hv")
+
+fit2 <- survfit(Surv(Data$years,Data$div) ~ as.factor(Data$mixed))
+#print(fit)
+ggsurvplot(fit2, data = Data,
+           pval = TRUE, conf.int = TRUE,
+           linetype = "strata",
+           surv.median.line = "hv")
+```
+
+## Sample Dataset 2: US Census Survival Data
+
+The dataset is based on US Census data and contains the expected survival probabilities of the United States population, by age and sex, from 1940 to 2012. Each of the tables contains the daily hazard rate for a matched subject from the population, defined as $-\log(1-q)/365.25$ where $q$ is the 1 year probability of death as reported in the original tables from the US Census. The different dimentions of age (0-1 days, 1-7 days, 7-28 days, 28 days to 1 year, 1-2 years, etc), gender (male or female) and calendar year (1940-2012).
+
+The dataset is from survexp.us which is included in the $\texttt{survival}$ library.
+
+We wanted to us this dataset for a few reasons:
+
+• Within this dataset we know the hazard function and want to show how to derive the survival function:
+  •Use $S(y) = exp[-H(y)]$ as covered earlier
+  •But need to use numerical methods to evaluate the integral, linking the relationship of the survival function to the cumulative hazard
+• Want to use survival rate information to back into a possible dataset to explore that possibility
+• Fit a Weibull distribution to the newly created dataset to see how it fits to the survival cdf
+
+The paper about the dataset can be found at https://www.mayo.edu/research/documents/biostat-63pdf/doc-10027294, although a lot of the code is written in S-Plus. 
+
+```{r census_dataset, message=FALSE, warning=FALSE}
+library(survival)
+library(fitdistrplus)
+
+#library(help=survival)
+
+# start, 1-7 days, 7-28, 28 to 1 year, and subsequent years
+tm <- c(0, 1/365, 7/365, 28/365, 1:106)
+
+hazardMale <- survexp.us[,"male","2012"]
+hazardFemale <- survexp.us[,"female", "2012"]
+
+
+# plot the hazard rate
+plot(tm, hazardMale*365.24, log='y',type = "l", col='blue',
+     main = "Hazards for US Males and Females in 2012",
+     xlab = "Age in Years", ylab = "Hazard")
+lines(tm, hazardFemale*365.24,  log='y', col='red', lty=2)
+legend(80, .001, legend=c("Male", "Female"),
+       col=c("blue", "red"), lty=1:2, cex=0.8)
+
+# plot the survival rate
+# To get the corresponding survival plots, we first compute a vector of differences, "tm.diff"
+# Then we find the cumulative hazard functions using the "cumsum" function 
+# Use the relationship of the survival function to the cumulative hazard to get "survMale" and "survFemale".
+tm.diff <- diff(tm)
+survivalMale <- exp(-cumsum(hazardMale[2:110]*tm.diff)*365.24)
+survivalFemale <- exp(-cumsum(hazardFemale[2:110]*tm.diff)*365.24)
+
+# transform the data into something that can be estimated with Weibull
+no.people <- 1000000000
+no.deaths <- ceiling((no.people-(no.people*0.99999879))) # calculated by hand using cumulative survival in year 1
+#print(c(no.people, no.deaths))
+for(i in 2:length(survivalMale)){
+  no.people[i] <- no.people[i-1]-no.deaths[i-1]
+  no.deaths[i] <- ceiling((no.people[i]-(no.people[i]*survivalMale[i])))
+}
+
+# create dataframe with for loop data 
+Data <- data.frame("time" = 1:109, "no.people" = no.people,
+                   "no.deaths" = no.deaths, "censored" = 0,
+                   "cum.survival" = survivalMale, stringsAsFactors = FALSE)
+
+head(Data)
+
+# fit the weibull to determinte the shape and scale parameters
+weibull_fit <- survreg(Surv(Data$time,Data$no.people) ~ 1, dist="weibull")
+summary(weibull_fit)
+
+
+# function used for plot
+# for Weibull distribution functions "dweibull" and "pweibull" compute the p.d.f. and c.d.f.
+# Use arguments "shape" and "scale" to represent the parameters lambda and 1/theta, respectively
+weibSurvival <- function(t, shape, scale) pweibull(t, shape=shape, scale=scale, lower.tail=F)
+
+# plot the survival numerically integrated weibell curves
+plot(tm[2:110], survivalMale, type = "l", col='blue',
+     main = "Survival for US Males and Females in 2012",
+     xlab = "Age in Years", ylab = "Survival Probability")
+lines(tm[2:110], survivalFemale,  col='red', lty=2)
+curve(weibSurvival(x, shape=4.94, scale=1/.0124), from=0, to=106,col='black',add=TRUE)
+legend(0, .2, legend=c("Male", "Female", "Weibull-Male"),
+       col=c("blue", "red", "black"), lty=1:2, cex=0.8)
+
+# mean age of male death in 2012
+sum(survivalMale*tm.diff)
+
+# mean age of female death in 2012
+sum(survivalFemale*tm.diff)
+
+```
